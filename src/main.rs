@@ -68,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
     // loop for total test seconds
     loop {
         if current_time.elapsed() > tokio::time::Duration::from_secs(opts.test_seconds) {
-            log::info!("Test finished in {} seconds", opts.test_seconds);
+            log::info!("[main] Test finished in {} seconds", opts.test_seconds);
             break;
         }
 
@@ -82,20 +82,15 @@ async fn main() -> anyhow::Result<()> {
         // loop for each round
         loop {
             if *test_ok.read().await {
-                log::info!("Test passed");
+                log::info!("[main] Test passed");
                 success += 1;
                 break;
             }
-            if round_current.elapsed()
-                > tokio::time::Duration::from_millis(opts.round_timeout)
-            {
-                log::debug!("Round timeout");
+            if round_current.elapsed() > tokio::time::Duration::from_millis(opts.round_timeout) {
+                log::debug!("[main] Round timeout");
                 break;
             }
-            tokio::time::sleep(tokio::time::Duration::from_millis(
-                opts.round_interval,
-            ))
-            .await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(opts.round_interval)).await;
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(opts.interval)).await;
     }
@@ -105,6 +100,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     reader_handle.await?;
-    log::info!("Test passed: {} / {}", success, total);
+    log::info!("[main] Test passed: {} / {}", success, total);
     Ok(())
 }
