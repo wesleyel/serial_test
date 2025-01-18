@@ -89,8 +89,7 @@ async fn main() -> anyhow::Result<()> {
             println!("Received line: {}", line);
             if line.contains(EXPECTED_RESP) {
                 println!("Callback received");
-                let mut callback = callback_lock_child.write().await;
-                *callback = true;
+                *callback_lock_child.write().await = true;
             }
         }
     });
@@ -99,11 +98,9 @@ async fn main() -> anyhow::Result<()> {
         writer.send(TEST_CMD.to_string()).await?;
         let current_time = tokio::time::Instant::now();
         loop {
-            let callback = callback_lock.read().await;
-            if *callback {
+            if *callback_lock.read().await {
                 println!("Callback received");
-                let mut callback = callback_lock.write().await;
-                *callback = false;
+                *callback_lock.write().await = false;
                 break;
             }
             if current_time.elapsed() > tokio::time::Duration::from_secs(10) {
