@@ -6,6 +6,7 @@ use bytes::BytesMut;
 use tokio_serial::SerialPortBuilderExt;
 
 const DEFAULT_TTY: &str = "/dev/ttyS3";
+const DEFAULT_BAUD: u32 = 921600;
 
 struct LineCodec;
 
@@ -34,21 +35,57 @@ impl Encoder<String> for LineCodec {
     }
 }
 
+struct HexCodec;
+
+impl Decoder for HexCodec {
+    type Item = String;
+    type Error = io::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let hex = src
+            .as_ref()
+            .iter()
+            .map(|b| {
+                let char_representation = if b.is_ascii_graphic() {
+                    *b as char
+                } else {
+                    '.'
+                };
+                format!("{}({:02x})", char_representation, b)
+            })
+            .collect::<String>();
+        Ok(Some(hex))
+    }
+}
+
+impl Encoder<String> for HexCodec {
+    type Error = io::Error;
+
+    fn encode(&mut self, _item: String, _dst: &mut BytesMut) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
 #[tokio::main]
 async fn main() -> tokio_serial::Result<()> {
     let mut args = env::args();
     let tty_path = args.nth(1).unwrap_or_else(|| DEFAULT_TTY.into());
 
-    let mut port = tokio_serial::new(tty_path, 921600).open_native_async()?;
+    let mut port = tokio_serial::new(tty_path, DEFAULT_BAUD).open_native_async()?;
 
     port.set_exclusive(false)
         .expect("Unable to set serial port exclusive to false");
 
-    let mut reader = LineCodec.framed(port);
+    // let mut reader = LineCodec.framed(port);
 
-    while let Some(line_result) = reader.next().await {
-        let line = line_result.expect("Failed to read line");
-        println!("{}", line);
+    // while let Some(line_result) = reader.next().await {
+    //     let line = line_result.expect("Failed to read line");
+    //     println!("{}", line);
+    // }
+    let mut reader = HexCodec.framed(port);
+    while let Some(hex_result) = reader.next().await {
+        let hex = hex_result.expect("Failed to read hex");
+        println!("{}", hex);
     }
     Ok(())
 }
