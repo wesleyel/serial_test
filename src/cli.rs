@@ -38,15 +38,19 @@ pub struct Options {
 
     /// Test total times in seconds
     #[arg(short, long, default_value = "10")]
-    pub test_seconds: u32,
+    pub test_seconds: u64,
+
+    /// Test interval in milliseconds
+    #[arg(short, long, default_value = "1000")]
+    pub interval: u64,
 
     /// Round max timeout in milliseconds
     #[arg(long, default_value = "1000")]
-    pub round_timeout: u32,
+    pub round_timeout: u64,
 
     /// Round interval in milliseconds
     #[arg(long, default_value = "100")]
-    pub round_interval: u32,
+    pub round_interval: u64,
 
     /// Max continuous fail count
     #[arg(short, long, default_value = "3")]

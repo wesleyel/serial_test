@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
     let current_time = tokio::time::Instant::now();
     // loop for total test seconds
     loop {
-        if current_time.elapsed() > tokio::time::Duration::from_secs(opts.test_seconds as u64) {
+        if current_time.elapsed() > tokio::time::Duration::from_secs(opts.test_seconds) {
             log::info!("Test finished in {} seconds", opts.test_seconds);
             break;
         }
@@ -87,16 +87,17 @@ async fn main() -> anyhow::Result<()> {
                 break;
             }
             if round_current.elapsed()
-                > tokio::time::Duration::from_millis(opts.round_timeout as u64)
+                > tokio::time::Duration::from_millis(opts.round_timeout)
             {
                 log::debug!("Round timeout");
                 break;
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(
-                opts.round_interval as u64,
+                opts.round_interval,
             ))
             .await;
         }
+        tokio::time::sleep(tokio::time::Duration::from_millis(opts.interval)).await;
     }
     {
         let mut state = child_alive.write().await;
