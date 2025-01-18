@@ -1,4 +1,6 @@
-# SerialPort Test Tool
+# SerialPort Test
+
+[![Crates.io Version](https://img.shields.io/crates/v/serialport_test)](https://crates.io/crates/serialport_test)
 
 A comprehensive tool designed for continuous read/write testing of serial devices.
 
