@@ -1,13 +1,13 @@
-# Serial Test
+# SerialPort Test Tool
 
-This serial test tool is aimed for continuous read/write testing of serial devices.
+A comprehensive tool designed for continuous read/write testing of serial devices.
 
 ## Features
 
-- Main thread to write test command to the serial port.
-- A `tokio` reader thread continuely spy on the serial port output, when expected output is received, it will notify the main thread.
-- Add properly logging and metrics.
-- Add ctrl+c to stop the test.
+- **Main Thread Operations**: The main thread is responsible for writing test commands to the serial port.
+- **Asynchronous Monitoring**: Utilizes a `tokio` reader thread to continuously monitor the serial port output. Upon receiving the expected output, it promptly notifies the main thread.
+- **Logging and Metrics**: Integrated logging and metrics for enhanced monitoring and debugging.
+- **Graceful Termination**: Supports stopping the test gracefully using `ctrl+c`.
 
 
 ## Usage

@@ -517,21 +517,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serial_test"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytes",
- "clap",
- "futures",
- "log",
- "simple_logger",
- "tokio",
- "tokio-serial",
- "tokio-util",
-]
-
-[[package]]
 name = "serialport"
 version = "4.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -547,6 +532,21 @@ dependencies = [
  "scopeguard",
  "unescaper",
  "winapi",
+]
+
+[[package]]
+name = "serialport_test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "clap",
+ "futures",
+ "log",
+ "simple_logger",
+ "tokio",
+ "tokio-serial",
+ "tokio-util",
 ]
 
 [[package]]

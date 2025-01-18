@@ -1,10 +1,10 @@
 [package]
-name = "serial_test"
+name = "serialport_test"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "A serial test tool aimed for continuous read/write testing of serial devices"
-repository = "https://github.com/wesleyel/serial_test"
+description = "A comprehensive tool designed for continuous read/write testing of serial devices."
+repository = "https://github.com/wesleyel/serialport_test"
 
 [dependencies]
 anyhow = "1.0.95"
