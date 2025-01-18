@@ -1,0 +1,73 @@
+use clap::{Parser, ValueEnum};
+
+#[derive(Debug, Clone)]
+pub struct TestCase {
+    pub command: String,
+    pub expected: String,
+}
+
+#[derive(ValueEnum, Debug, Clone)]
+pub enum TestSuite {
+    Regular,
+    SingleBD,
+}
+
+impl From<TestSuite> for TestCase {
+    fn from(test_suite: TestSuite) -> Self {
+        match test_suite {
+            TestSuite::Regular => TestCase {
+                command: "$QXMONCSTM".to_string(),
+                expected: "QXMONCSTM,BG1101".to_string(),
+            },
+            TestSuite::SingleBD => TestCase {
+                command: "$QXMON".to_string(),
+                expected: "QXMON,BG1101".to_string(),
+            },
+        }
+    }
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct Options {
+    /// Serial port to connect
+    pub port: String,
+
+    /// Baud rate
+    #[arg(short, long, default_value = "921600")]
+    pub baud: u32,
+
+    /// Test total times in seconds
+    #[arg(short, long, default_value = "10")]
+    pub test_seconds: u32,
+
+    /// Round max timeout in milliseconds
+    #[arg(long, default_value = "1000")]
+    pub round_timeout: u32,
+
+    /// Round interval in milliseconds
+    #[arg(long, default_value = "100")]
+    pub round_interval: u32,
+
+    /// Max continuous fail count
+    #[arg(short, long, default_value = "3")]
+    pub max_fail_count: u32,
+
+    /// Increase verbosity
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    pub verbose: u8,
+
+    /// Test suite
+    #[arg(short, long, default_value = "regular")]
+    pub test_suite: TestSuite,
+}
+
+pub fn parse_options() -> Options {
+    let opts = Options::parse();
+    let debug_level = match opts.verbose {
+        0 => log::Level::Info,
+        1 => log::Level::Debug,
+        _ => log::Level::Trace,
+    };
+    simple_logger::init_with_level(debug_level).unwrap();
+    opts
+}

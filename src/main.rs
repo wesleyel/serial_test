@@ -1,146 +1,109 @@
-use futures::{stream::StreamExt, Sink, SinkExt, Stream};
-use std::{env, io, str, sync::Arc};
-use tokio::sync::{Mutex, RwLock};
-use tokio_util::codec::{Decoder, Encoder};
+mod cli;
+mod codec;
 
-use bytes::BytesMut;
+use cli::TestCase;
+use tokio_util::codec::Decoder;
+
+use futures::{stream::StreamExt, SinkExt};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+use crate::codec::LineCodec;
 use tokio_serial::SerialPortBuilderExt;
 
-const DEFAULT_TTY: &str = "/dev/ttyS3";
-const DEFAULT_BAUD: u32 = 921600;
-const TEST_CMD: &str = "$QXMONCSTM\r\n";
-const EXPECTED_RESP: &str = "QXMONCSTM,BG1101";
-
-struct LineCodec;
-
-impl Decoder for LineCodec {
-    type Item = String;
-    type Error = io::Error;
-
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        let newline = src.as_ref().windows(2).position(|w| w == b"\r\n");
-        if let Some(n) = newline {
-            let line = src.split_to(n + 2);
-            return match str::from_utf8(line.as_ref()) {
-                Ok(s) => Ok(Some(s.to_string())),
-                Err(_) => Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Invalid String: {:#?}", line.as_ref()),
-                )),
-            };
-        }
-        Ok(None)
-    }
+fn init_port(opts: &cli::Options) -> anyhow::Result<tokio_serial::SerialStream> {
+    let mut port = tokio_serial::new(&opts.port, opts.baud).open_native_async()?;
+    port.set_exclusive(false)
+        .expect("Unable to set serial port exclusive to false");
+    Ok(port)
 }
 
-impl Encoder<String> for LineCodec {
-    type Error = io::Error;
-
-    fn encode(&mut self, item: String, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        if item.ends_with("\r\n") {
-            dst.extend_from_slice(item.as_bytes());
-        } else {
-            dst.extend_from_slice(item.as_bytes());
-            dst.extend_from_slice(b"\r\n");
-        }
-        Ok(())
-    }
-}
-#[allow(dead_code)]
-async fn test_once<W, R>(
-    writer: &mut W,
-    reader: &mut R,
-    cmd: &str,
-    expected: &str,
-) -> anyhow::Result<()>
-where
-    W: Sink<String, Error = io::Error> + Unpin,
-    R: Stream<Item = Result<String, io::Error>> + Unpin,
-{
-    writer.send(cmd.to_string()).await?;
-    let line = reader.next().await.expect("Failed to read line");
-    match line {
-        Ok(line) => {
-            if line.contains(expected) {
-                return Ok(());
-            } else {
-                return Err(anyhow::anyhow!("Unexpected response: {}", line));
-            }
-        }
-        Err(e) => return Err(anyhow::anyhow!("Failed to read line: {}", e)),
-    }
-}
+// async fn round_test(opts: &cli::Options, test_ok: &Arc<RwLock<bool>>, writer: &mut impl Sink<String>) -> anyhow::Result<()> {
+//     let testcase: TestCase = opts.test_suite.into();
+//     writer.send(testcase.command.to_string()).await?;
+//     {
+//         let mut state = test_ok.write().await;
+//         *state = false;
+//     }
+//     Ok(())
+// }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
-    let mut args = env::args();
-    let job_end_lock = Arc::new(RwLock::new(false));
-    let callback_lock = Arc::new(RwLock::new(false));
-    let tty_path = args.nth(1).unwrap_or_else(|| DEFAULT_TTY.into());
-    let mut port = tokio_serial::new(tty_path, DEFAULT_BAUD).open_native_async()?;
-    port.set_exclusive(false)
-        .expect("Unable to set serial port exclusive to false");
+    let opts = cli::parse_options();
+    log::info!("Options: {:#?}", opts);
+
+    let port = init_port(&opts)?;
+    let child_alive = Arc::new(RwLock::new(false));
+    let test_ok = Arc::new(RwLock::new(false));
 
     let (mut writer, mut reader) = LineCodec.framed(port).split();
 
-    let callback_lock_child = callback_lock.clone();
-    let job_end_lock_child = job_end_lock.clone();
-    // 子线程负责读取串口消息
+    let test_ok_clone = test_ok.clone();
+    let child_alive_clone = child_alive.clone();
+    let testcase: TestCase = opts.test_suite.into();
     let reader_handle = tokio::spawn(async move {
         loop {
-            let job_end = job_end_lock_child.read().await;
-            let status = *job_end;
-            drop(job_end);
-            if status {
+            if *child_alive_clone.read().await {
+                log::info!("Child thread exited");
                 break;
             }
             if let Some(Ok(line)) = reader.next().await {
-                // println!("Received line: {}", line);
-                if line.contains(EXPECTED_RESP) {
-                    println!("Callback received");
-                    let mut state = callback_lock_child.write().await;
+                if line.contains(&testcase.expected) {
+                    log::debug!("[child] Test passed");
+                    let mut state = test_ok_clone.write().await;
                     *state = true;
-                    drop(state);
+                } else {
+                    log::trace!("[child] Line not expected: {}", line);
                 }
             } else {
-                println!("Reader failed");
+                log::debug!("[child] Read error");
             }
         }
     });
 
     let mut total = 0;
     let mut success = 0;
-    for _ in 0..10 {
+    let current_time = tokio::time::Instant::now();
+    // loop for total test seconds
+    loop {
+        if current_time.elapsed() > tokio::time::Duration::from_secs(opts.test_seconds as u64) {
+            log::info!("Test finished in {} seconds", opts.test_seconds);
+            break;
+        }
+
         total += 1;
-        writer.send(TEST_CMD.to_string()).await?;
-        let mut state = callback_lock.write().await;
-        *state = false;
-        drop(state);
-        let current_time = tokio::time::Instant::now();
-        for _ in 0..5 {
-            let state = callback_lock.read().await;
-            let status = *state;
-            drop(state);
-            if status {
-                println!("Callback received");
+        writer.send(testcase.command.to_string()).await?;
+        {
+            let mut state = test_ok.write().await;
+            *state = false;
+        }
+        let round_current = tokio::time::Instant::now();
+        // loop for each round
+        loop {
+            if *test_ok.read().await {
+                log::info!("Test passed");
                 success += 1;
                 break;
             }
-            if current_time.elapsed() > tokio::time::Duration::from_secs(1) {
-                // return Err(anyhow::anyhow!("Timeout"));
-                println!("Timeout");
+            if round_current.elapsed()
+                > tokio::time::Duration::from_millis(opts.round_timeout as u64)
+            {
+                log::debug!("Round timeout");
                 break;
             }
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(
+                opts.round_interval as u64,
+            ))
+            .await;
         }
-
-        println!("Test {} passed: {}", total, success);
     }
-    let mut job_end = job_end_lock.write().await;
-    *job_end = true;
-    drop(job_end);
+    {
+        let mut state = child_alive.write().await;
+        *state = true;
+    }
 
     reader_handle.await?;
-    println!("Test passed: {} / {}", success, total);
+    log::info!("Test passed: {} / {}", success, total);
     Ok(())
 }
