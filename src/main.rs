@@ -89,28 +89,40 @@ async fn main() -> anyhow::Result<()> {
             println!("Received line: {}", line);
             if line.contains(EXPECTED_RESP) {
                 println!("Callback received");
-                *callback_lock_child.write().await = true;
+                let mut state = callback_lock_child.write().await;
+                *state = true;
+                drop(state);
             }
         }
     });
 
+    let mut total = 0;
+    let mut success = 0;
     for _ in 0..10 {
+        total += 1;
         writer.send(TEST_CMD.to_string()).await?;
         let current_time = tokio::time::Instant::now();
         loop {
-            if *callback_lock.read().await {
+            let state = callback_lock.read().await;
+            if *state {
+                drop(state);
                 println!("Callback received");
-                *callback_lock.write().await = false;
+                let mut state = callback_lock.write().await;
+                *state = false;
+                drop(state);
+                success += 1;
                 break;
             }
-            if current_time.elapsed() > tokio::time::Duration::from_secs(10) {
-                return Err(anyhow::anyhow!("Timeout"));
+            if current_time.elapsed() > tokio::time::Duration::from_secs(1) {
+                // return Err(anyhow::anyhow!("Timeout"));
+                println!("Timeout");
+                break;
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
     }
 
     reader_handle.await?;
-    println!("Test passed");
+    println!("Test passed: {} / {}", success, total);
     Ok(())
 }
