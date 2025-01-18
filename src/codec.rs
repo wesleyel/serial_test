@@ -9,12 +9,9 @@ impl Decoder for LineCodec {
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        let newline = src
-            .as_ref()
-            .windows(2)
-            .position(|w| w == b"\r\n" || w == b"\n\r");
+        let newline = src.iter().position(|b| *b == b'\n');
         if let Some(n) = newline {
-            let line = src.split_to(n + 2);
+            let line = src.split_to(n + 1);
             log::trace!("Received: {:?}", line.as_ref());
             return match std::str::from_utf8(line.as_ref()) {
                 Ok(s) => Ok(Some(s.to_string())),

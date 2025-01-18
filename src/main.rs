@@ -5,8 +5,11 @@ use cli::TestCase;
 use tokio_util::codec::Decoder;
 
 use futures::{sink::SinkExt, stream::StreamExt};
-use std::{process::ExitCode, sync::Arc};
-use tokio::sync::RwLock;
+use std::{cell::Cell, process::ExitCode, sync::Arc};
+use tokio::{
+    signal,
+    sync::{Mutex, RwLock},
+};
 
 use crate::codec::LineCodec;
 use tokio_serial::SerialPortBuilderExt;
@@ -81,33 +84,59 @@ async fn main_loop<T>(
     test_ok: &Arc<RwLock<bool>>,
     testcase: TestCase,
     writer: &mut T,
+    child_alive: Arc<RwLock<bool>>,
 ) -> anyhow::Result<()>
 where
     T: SinkExt<String, Error = std::io::Error> + std::marker::Unpin,
 {
-    let mut total = 0;
-    let mut success = 0;
-    let mut continuous_fail = 0;
+    let total = Arc::new(Mutex::new(0));
+    let success = Arc::new(Mutex::new(0));
+    let continuous_fail = Arc::new(Mutex::new(0));
     let current_time = tokio::time::Instant::now();
+
+    let child_alive_clone = child_alive.clone();
+    let total_clone = total.clone();
+    let success_clone = success.clone();
+    let continuous_fail_clone = continuous_fail.clone();
+    tokio::spawn(async move {
+        signal::ctrl_c().await.unwrap();
+        {
+            let mut state = child_alive_clone.write().await;
+            *state = true;
+        }
+        log::info!("[main] Ctrl-C received");
+        log::info!("[main] Total: {}", *total_clone.lock().await);
+        log::info!("[main] Success: {}", *success_clone.lock().await);
+        log::info!(
+            "[main] Continuous fail: {}",
+            *continuous_fail_clone.lock().await
+        );
+        std::process::exit(0);
+    });
+
     // loop for total test seconds
     loop {
         if current_time.elapsed() > tokio::time::Duration::from_secs(opts.test_seconds) {
             log::info!("[main] Test finished in {} seconds", opts.test_seconds);
-            log::info!("[main] Test passed: {} / {}", success, total);
+            log::info!(
+                "[main] Test passed: {} / {}",
+                *success.lock().await,
+                *total.lock().await
+            );
             return Ok(());
         }
 
-        total += 1;
+        *total.lock().await += 1;
         if round_test(&opts, &test_ok, writer, testcase.clone()).await {
-            success += 1;
-            continuous_fail = 0;
+            *success.lock().await += 1;
+            *continuous_fail.lock().await = 0;
         } else {
-            continuous_fail += 1;
+            *continuous_fail.lock().await += 1;
         }
-        if continuous_fail > opts.max_fail_count {
+        if *continuous_fail.lock().await > opts.max_fail_count {
             log::error!(
                 "[main] continuous fail {} over max fail {}",
-                continuous_fail,
+                *continuous_fail.lock().await,
                 opts.max_fail_count
             );
             return Err(anyhow::anyhow!("continuous fail over max fail"));
@@ -135,7 +164,8 @@ async fn main() -> ExitCode {
         child_alive.clone(),
     ));
 
-    let retval = match main_loop(&opts, &test_ok, testcase, &mut writer).await {
+    let retval = match main_loop(&opts, &test_ok, testcase, &mut writer, child_alive.clone()).await
+    {
         Ok(_) => ExitCode::SUCCESS,
         Err(_) => ExitCode::FAILURE,
     };
