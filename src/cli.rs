@@ -45,7 +45,7 @@ pub struct Options {
     pub interval: u64,
 
     /// Round max timeout in milliseconds
-    #[arg(long, default_value = "1000")]
+    #[arg(long, default_value = "600")]
     pub round_timeout: u64,
 
     /// Round interval in milliseconds

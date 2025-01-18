@@ -9,7 +9,10 @@ impl Decoder for LineCodec {
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        let newline = src.as_ref().windows(2).position(|w| w == b"\r\n");
+        let newline = src
+            .as_ref()
+            .windows(2)
+            .position(|w| w == b"\r\n" || w == b"\n\r");
         if let Some(n) = newline {
             let line = src.split_to(n + 2);
             log::trace!("Received: {:?}", line.as_ref());
@@ -20,6 +23,12 @@ impl Decoder for LineCodec {
                     format!("Invalid String: {:?}", line.as_ref()),
                 )),
             };
+        }
+        if src.len() > 1024 {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Buffer too long: {:?}", src.len()),
+            ));
         }
         Ok(None)
     }
