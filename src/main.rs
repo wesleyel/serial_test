@@ -1,5 +1,6 @@
 use futures::{stream::StreamExt, Sink, SinkExt, Stream};
-use std::{env, io, str};
+use std::{env, io, str, sync::Arc};
+use tokio::sync::RwLock;
 use tokio_util::codec::{Decoder, Encoder, Framed};
 
 use bytes::BytesMut;
@@ -45,7 +46,7 @@ impl Encoder<String> for LineCodec {
         Ok(())
     }
 }
-
+#[allow(dead_code)]
 async fn test_once<W, R>(
     writer: &mut W,
     reader: &mut R,
@@ -73,19 +74,50 @@ where
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     let mut args = env::args();
+    let start_lock = Arc::new(RwLock::new(false));
+    let callback_lock = Arc::new(RwLock::new(false));
     let tty_path = args.nth(1).unwrap_or_else(|| DEFAULT_TTY.into());
-
     let mut port = tokio_serial::new(tty_path, DEFAULT_BAUD).open_native_async()?;
-
     port.set_exclusive(false)
         .expect("Unable to set serial port exclusive to false");
 
     let (mut writer, mut reader) = LineCodec.framed(port).split();
 
-    match test_once(&mut writer, &mut reader, TEST_CMD, EXPECTED_RESP).await {
-        Ok(_) => println!("Test passed"),
-        Err(e) => println!("Test failed: {}", e),
-    }
+    let start_lock_child = start_lock.clone();
+    let callback_lock_child = callback_lock.clone();
+    // 子线程负责读取串口消息
+    let reader_handle = tokio::spawn(async move {
+        while let Some(Ok(line)) = reader.next().await {
+            println!("Received line: {}", line);
+            let should_process = {
+                let start = start_lock_child.read().await;
+                *start
+            };
+            println!("Should process: {}", should_process);
+            if should_process && line.contains(EXPECTED_RESP) {
+                println!("Callback received");
+                let mut callback = callback_lock_child.write().await;
+                *callback = true;
+            }
+        }
+    });
 
+    let mut start_lock = start_lock.write().await;
+    *start_lock = true;
+    writer.send(TEST_CMD.to_string()).await?;
+    let current_time = tokio::time::Instant::now();
+    loop {
+        let callback = callback_lock.read().await;
+        if *callback {
+            println!("Callback received");
+            break;
+        }
+        if current_time.elapsed() > tokio::time::Duration::from_secs(10) {
+            return Err(anyhow::anyhow!("Timeout"));
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+    reader_handle.await?;
+    println!("Test passed");
     Ok(())
 }
