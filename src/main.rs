@@ -5,7 +5,7 @@ use cli::TestCase;
 use tokio_util::codec::Decoder;
 
 use futures::{sink::SinkExt, stream::StreamExt};
-use std::{cell::Cell, process::ExitCode, sync::Arc};
+use std::{process::ExitCode, sync::Arc};
 use tokio::{
     signal,
     sync::{Mutex, RwLock},
@@ -127,7 +127,7 @@ where
         }
 
         *total.lock().await += 1;
-        if round_test(&opts, &test_ok, writer, testcase.clone()).await {
+        if round_test(opts, test_ok, writer, testcase.clone()).await {
             *success.lock().await += 1;
             *continuous_fail.lock().await = 0;
         } else {
