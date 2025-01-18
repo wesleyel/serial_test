@@ -1,7 +1,7 @@
 use futures::{stream::StreamExt, Sink, SinkExt, Stream};
 use std::{env, io, str, sync::Arc};
-use tokio::sync::RwLock;
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use tokio::sync::{Mutex, RwLock};
+use tokio_util::codec::{Decoder, Encoder};
 
 use bytes::BytesMut;
 use tokio_serial::SerialPortBuilderExt;
@@ -74,6 +74,7 @@ where
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     let mut args = env::args();
+    let job_end_lock = Arc::new(RwLock::new(false));
     let callback_lock = Arc::new(RwLock::new(false));
     let tty_path = args.nth(1).unwrap_or_else(|| DEFAULT_TTY.into());
     let mut port = tokio_serial::new(tty_path, DEFAULT_BAUD).open_native_async()?;
@@ -83,15 +84,26 @@ async fn main() -> anyhow::Result<()> {
     let (mut writer, mut reader) = LineCodec.framed(port).split();
 
     let callback_lock_child = callback_lock.clone();
+    let job_end_lock_child = job_end_lock.clone();
     // 子线程负责读取串口消息
     let reader_handle = tokio::spawn(async move {
-        while let Some(Ok(line)) = reader.next().await {
-            println!("Received line: {}", line);
-            if line.contains(EXPECTED_RESP) {
-                println!("Callback received");
-                let mut state = callback_lock_child.write().await;
-                *state = true;
-                drop(state);
+        loop {
+            let job_end = job_end_lock_child.read().await;
+            let status = *job_end;
+            drop(job_end);
+            if status {
+                break;
+            }
+            if let Some(Ok(line)) = reader.next().await {
+                // println!("Received line: {}", line);
+                if line.contains(EXPECTED_RESP) {
+                    println!("Callback received");
+                    let mut state = callback_lock_child.write().await;
+                    *state = true;
+                    drop(state);
+                }
+            } else {
+                println!("Reader failed");
             }
         }
     });
@@ -101,15 +113,16 @@ async fn main() -> anyhow::Result<()> {
     for _ in 0..10 {
         total += 1;
         writer.send(TEST_CMD.to_string()).await?;
+        let mut state = callback_lock.write().await;
+        *state = false;
+        drop(state);
         let current_time = tokio::time::Instant::now();
-        loop {
+        for _ in 0..5 {
             let state = callback_lock.read().await;
-            if *state {
-                drop(state);
+            let status = *state;
+            drop(state);
+            if status {
                 println!("Callback received");
-                let mut state = callback_lock.write().await;
-                *state = false;
-                drop(state);
                 success += 1;
                 break;
             }
@@ -120,7 +133,12 @@ async fn main() -> anyhow::Result<()> {
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
+
+        println!("Test {} passed: {}", total, success);
     }
+    let mut job_end = job_end_lock.write().await;
+    *job_end = true;
+    drop(job_end);
 
     reader_handle.await?;
     println!("Test passed: {} / {}", success, total);
