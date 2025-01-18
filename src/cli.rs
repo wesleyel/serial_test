@@ -61,7 +61,7 @@ pub struct Options {
     pub verbose: u8,
 
     /// Test suite
-    #[arg(short, long, default_value = "regular")]
+    #[arg(short = 's', long, default_value = "regular")]
     pub test_suite: TestSuite,
 }
 

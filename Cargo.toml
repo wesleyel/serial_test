@@ -1,7 +1,10 @@
 [package]
-name = "gnss_test"
+name = "serial_test"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "This serial test tool is aimed for continuous read/write testing of serial devices"
+repository = "https://github.com/wesleyel/serial_test"
 
 [dependencies]
 anyhow = "1.0.95"

@@ -21,7 +21,7 @@ fn init_port(opts: &cli::Options) -> anyhow::Result<tokio_serial::SerialStream> 
     Ok(port)
 }
 
-async fn handle_reader<T>(
+async fn read_thread_handle<T>(
     mut reader: T,
     testcase: TestCase,
     test_ok: Arc<RwLock<bool>>,
@@ -157,7 +157,7 @@ async fn main() -> ExitCode {
     let port = init_port(&opts).expect("Failed to initialize port");
     let (mut writer, reader) = LineCodec.framed(port).split();
 
-    let reader_handle = tokio::spawn(handle_reader(
+    let reader_handle = tokio::spawn(read_thread_handle(
         reader,
         testcase.clone(),
         test_ok.clone(),
