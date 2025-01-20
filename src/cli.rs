@@ -29,6 +29,7 @@ impl From<TestSuite> for TestCase {
 
 /// A comprehensive tool designed for continuous read/write testing of serial devices.
 #[derive(Parser, Debug, Clone)]
+#[command(version = env!("GIT_VERSION"))]
 pub struct Options {
     /// Serial port to connect
     pub port: String,
