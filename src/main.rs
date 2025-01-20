@@ -14,6 +14,8 @@ use tokio::{
 use crate::codec::LineCodec;
 use tokio_serial::SerialPortBuilderExt;
 
+const PRINT_INTERVAL: u64 = 10;
+
 fn init_port(opts: &cli::Options) -> anyhow::Result<tokio_serial::SerialStream> {
     let mut port = tokio_serial::new(&opts.port, opts.baud).open_native_async()?;
     port.set_exclusive(false)
@@ -31,16 +33,20 @@ async fn read_thread_handle<T>(
 {
     loop {
         if *child_alive.read().await {
-            log::info!("Child thread exited");
+            log::info!("[child] Child thread exited");
             break;
         }
         if let Some(Ok(line)) = reader.next().await {
-            if line.contains(&testcase.expected) {
-                log::debug!("[child] Test passed");
+            // remove extra \0 from line
+            if line.replace("\0", "").contains(&testcase.expected) {
                 let mut state = test_ok.write().await;
                 *state = true;
             } else {
-                log::trace!("[child] Line not expected: {}", line);
+                log::trace!(
+                    "[child] Line not expected:\ncur:{:#?}\nexp:{:#?}\n",
+                    line,
+                    testcase.expected
+                );
             }
         } else {
             log::debug!("[child] Read error");
@@ -68,7 +74,6 @@ where
     let round_current = tokio::time::Instant::now();
     loop {
         if *test_ok.read().await {
-            log::info!("[main] Test passed");
             return true;
         }
         if round_current.elapsed() > tokio::time::Duration::from_millis(opts.round_timeout) {
@@ -128,6 +133,13 @@ where
 
         *total.lock().await += 1;
         if round_test(opts, test_ok, writer, testcase.clone()).await {
+            if *total.lock().await % PRINT_INTERVAL == 0 {
+                log::info!(
+                    "[main] Test passed: {} / {}",
+                    *success.lock().await,
+                    *total.lock().await
+                );
+            }
             *success.lock().await += 1;
             *continuous_fail.lock().await = 0;
         } else {
@@ -148,7 +160,11 @@ where
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let opts = cli::parse_options();
-    log::debug!("Options: {:#?}", opts);
+    log::info!("============================================");
+    log::info!("Options: {:#?}", opts);
+    log::info!("Test Suite: {:#?}", opts.test_suite);
+    log::info!("Log print interval: {}", PRINT_INTERVAL);
+    log::info!("============================================");
     let testcase: TestCase = opts.test_suite.clone().into();
 
     let child_alive = Arc::new(RwLock::new(false));

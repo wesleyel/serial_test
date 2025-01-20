@@ -46,15 +46,15 @@ pub struct Options {
     pub interval: u64,
 
     /// Round max timeout in milliseconds
-    #[arg(long, default_value = "600")]
+    #[arg(long, default_value = "30")]
     pub round_timeout: u64,
 
     /// Round interval in milliseconds
-    #[arg(long, default_value = "100")]
+    #[arg(long, default_value = "5")]
     pub round_interval: u64,
 
     /// Max continuous fail count
-    #[arg(short, long, default_value = "3")]
+    #[arg(short, long, default_value = "5")]
     pub max_fail_count: u32,
 
     /// Increase verbosity

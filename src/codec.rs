@@ -12,7 +12,7 @@ impl Decoder for LineCodec {
         let newline = src.iter().position(|b| *b == b'\n');
         if let Some(n) = newline {
             let line = src.split_to(n + 1);
-            log::trace!("Received: {:?}", line.as_ref());
+            log::trace!("Received: {}", String::from_utf8_lossy(line.as_ref()));
             return match std::str::from_utf8(line.as_ref()) {
                 Ok(s) => Ok(Some(s.to_string())),
                 Err(_) => Err(io::Error::new(
@@ -21,7 +21,7 @@ impl Decoder for LineCodec {
                 )),
             };
         }
-        if src.len() > 1024 {
+        if src.len() > 256 {
             return Err(io::Error::new(
                 io::ErrorKind::Other,
                 format!("Buffer too long: {:?}", src.len()),
